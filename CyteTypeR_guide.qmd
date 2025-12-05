@@ -1,0 +1,149 @@
+---
+title: "Getting Started with CyteTypeR"
+author: "Badran Elshenawy"
+date: 2025-12-04T09:00:00Z
+format: html
+---
+
+# 🚀 Getting Started with CyteTypeR
+
+-   This guide introduces **CyteTypeR**, an API-driven tool for automated cell type annotation in scRNA-seq data.
+-   **CyteTypeR GitHub:** <https://github.com/NygenAnalytics/CyteTypeR>
+-   **Python version:** <https://github.com/NygenAnalytics/CyteType>
+-   **SeuratData (IFNB dataset):** <https://satijalab.org/seurat/articles/pbmc3k_tutorial>
+
+## 📌 Overview
+
+-   CyteTypeR prepares markers, metadata, and UMAP embeddings.
+
+-   Sends data to the CyteTypeR API for annotation.
+
+-   Returns:
+
+    -   Annotated **Seurat object**
+    -   **Interactive HTML report**
+
+-   Example CyteTypeR HTML report:
+
+    -   <https://nygen-labs-prod--cytetype-api.modal.run/report/34fac9e9-3c43-4c46-95f4-6b2994e57ada?cluster=7&tab=markers>
+
+
+
+## 🧰 Installation
+
+```{r}
+devtools::install_github("NygenAnalytics/CyteTypeR")
+```
+
+-   Required libraries:
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(SCpubr)
+library(tidyseurat)
+library(CyteTypeR)
+library(glmGamPoi)
+library(tictoc)
+```
+
+
+## 📥 Step 1 — Load Data
+
+-   Load the **IFNB stimulation dataset**:
+
+```{r}
+ifnb <- SeuratData::LoadData(ds = "ifnb")
+```
+
+
+## ⚙️ Step 2 — Pre-processing
+
+-   Perform SCTransform, PCA, and UMAP embedding:
+
+```{r}
+ifnb_sct <- ifnb %>%
+  SCTransform() %>%
+  RunPCA() %>%
+  RunUMAP(dims = 1:20)
+```
+
+
+## 🔍 Step 3 — Clustering
+
+-   Find neighbors and clusters:
+
+```{r}
+ifnb_sct_clust <- ifnb_sct %>%
+  FindNeighbors(dims = 1:20) %>%
+  FindClusters(resolution = 0.4)
+```
+
+
+## 🧬 Step 4 — Differential Expression
+
+-   Identify top markers per cluster:
+
+```{r}
+clust_markers <- ifnb_sct_clust %>%
+  FindAllMarkers(group.by = "seurat_clusters")
+```
+
+
+## 📦 Step 5 — Prepare Data for CyteTypeR
+
+-   Prepare UMAP coordinates, markers, and metadata:
+
+```{r}
+prepped_data <- PrepareCyteTypeR(
+  ifnb_sct_clust,
+  clust_markers,
+  n_top_genes = 10,
+  group_key = "seurat_clusters",
+  aggregate_metadata = TRUE,
+  coordinates_key = "umap"
+)
+```
+
+-   Add metadata for the HTML report:
+
+```{r}
+metadata <- list(
+  title = "My scRNA-seq analysis of the ifnb dataset",
+  run_label = "initial_analysis",
+  experiment_name = "ifnb_human_samples_study"
+)
+```
+
+------------------------------------------------------------------------
+
+## 🤖 Step 6 — Automated Cell Type Annotation
+
+-   Submit to CyteTypeR API:
+
+```{r}
+tic("CyteTypeR Run")
+ifnb_sct_clust_annot <- CyteTypeR(
+  obj = ifnb_sct_clust,
+  prepped_data = prepped_data,
+  study_context = "ifnb dataset from SeuratData package",
+  metadata = metadata
+)
+toc()
+```
+
+-   Output includes:
+
+    -   Predicted cell types added to Seurat metadata.
+    -   Interactive HTML report.
+    -   Updated cluster annotations.
+
+## ⭐ Summary
+
+-   CyteTypeR offers:
+
+    -   Automated annotation
+    -   High-quality visual reporting
+    -   Seamless Seurat integration
+
+-   Powerful tool for routine or large-scale scRNA-seq workflows.
