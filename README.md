@@ -1,38 +1,47 @@
-# CyteTypeR Tutorial
+# 🧬 CyteTypeR Tutorial
 
-A learning repository for **CyteTypeR**, an R package for automated cell type annotation of single-cell RNA-seq data using the CyteType API.
+A hands-on learning guide for **CyteTypeR** — an R package that automatically annotates your scRNA-seq clusters using the [CyteType API](https://github.com/NygenAnalytics/CyteTypeR).
 
-## Overview
+> **TL;DR** — Feed it a Seurat object with cluster markers, get back cell type annotations + a beautiful interactive report. ✨
 
-This tutorial demonstrates the CyteTypeR workflow for annotating scRNA-seq clusters with predicted cell types. The package submits cluster markers to the CyteType API and returns annotations with an interactive HTML report.
+## 🔬 What It Does
 
-## Requirements
+```
+Seurat Object ──→ PrepareCyteTypeR() ──→ CyteTypeR API ──→ Annotated Object + HTML Report
+     │                    │                                        │
+  clusters            extracts                              predicted cell
+  markers            markers,                               types added to
+  UMAP              metadata,                                 metadata
+                   coordinates
+```
+
+## 📦 Requirements
 
 ```r
-# Core packages
+# Core
 install.packages(c("Seurat", "tidyverse"))
 
 # CyteTypeR
 devtools::install_github("NygenAnalytics/CyteTypeR")
 
-# Additional dependencies
+# Dependencies
 install.packages(c("SCpubr", "glmGamPoi", "tictoc"))
 remotes::install_github("satijalab/seurat-data")
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 ```r
 library(Seurat)
 library(CyteTypeR)
 
-# 1. Load and preprocess data
-obj <- LoadData("ifnb") %>%
-  SCTransform() %>%
-  RunPCA() %>%
-  RunUMAP(dims = 1:20) %>%
-  FindNeighbors(dims = 1:20) %>%
-  FindClusters(resolution = 0.4)
+# 1. Load and preprocess
+obj <- LoadData("ifnb")
+obj <- SCTransform(obj, vst.flavor = "v2")
+obj <- RunPCA(obj)
+obj <- RunUMAP(obj, dims = 1:20)
+obj <- FindNeighbors(obj, dims = 1:20)
+obj <- FindClusters(obj, resolution = 0.4)
 
 # 2. Find markers
 markers <- FindAllMarkers(obj, group.by = "seurat_clusters")
@@ -40,17 +49,25 @@ markers <- FindAllMarkers(obj, group.by = "seurat_clusters")
 # 3. Prepare for CyteTypeR
 prepped_data <- PrepareCyteTypeR(obj, markers, n_top_genes = 10)
 
-# 4. Annotate
+# 4. Annotate 🎯
 annotated_obj <- CyteTypeR(obj, prepped_data, study_context = "PBMC IFNB stimulation")
 ```
 
-## Resources
+## 📂 Files
 
-- [CyteTypeR GitHub](https://github.com/NygenAnalytics/CyteTypeR)
-- [CyteType Python](https://github.com/NygenAnalytics/CyteType)
-- [Example Report](https://nygen-labs-prod--cytetype-api.modal.run/report/34fac9e9-3c43-4c46-95f4-6b2994e57ada)
+| File | Description |
+|------|-------------|
+| `cytetyper_guide.qmd` | 📖 Full step-by-step tutorial (Quarto) |
+| `query.json` | 🔍 Example API request/response structure |
 
-## Files
+## 🔗 Resources
 
-- `cytetyper_guide.qmd` - Full tutorial (Quarto document)
-- `query.json` - Example API request structure
+| | Link |
+|---|------|
+| 🧪 CyteTypeR (R) | [github.com/NygenAnalytics/CyteTypeR](https://github.com/NygenAnalytics/CyteTypeR) |
+| 🐍 CyteType (Python) | [github.com/NygenAnalytics/CyteType](https://github.com/NygenAnalytics/CyteType) |
+| 📊 Example Report | [Interactive HTML Report](https://nygen-labs-prod--cytetype-api.modal.run/report/34fac9e9-3c43-4c46-95f4-6b2994e57ada) |
+
+---
+
+Made with ☕ while learning single-cell bioinformatics.
