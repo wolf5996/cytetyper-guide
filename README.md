@@ -53,10 +53,17 @@ prepped_data <- PrepareCyteTypeR(obj, markers, n_top_genes = 10)
 annotated_obj <- CyteTypeR(obj, prepped_data, study_context = "PBMC IFNB stimulation")
 ```
 
+## 🚀 How to Use
+
+1. Clone this repo
+2. Open `cytetype.Rproj` in RStudio (this sets your working directory and ensures reproducibility)
+3. Open and run through `cytetyper_guide.qmd` step by step
+
 ## 📂 Files
 
 | File | Description |
 |------|-------------|
+| `cytetype.Rproj` | 🔧 RStudio project file — open this first |
 | `cytetyper_guide.qmd` | 📖 Full step-by-step tutorial (Quarto) |
 | `query.json` | 🔍 Example API request/response structure |
 
