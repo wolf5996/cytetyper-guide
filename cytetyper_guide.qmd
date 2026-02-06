@@ -1,43 +1,57 @@
 ---
 title: "Getting Started with CyteTypeR"
 author: "Badran Elshenawy"
-date: 2025-12-04T09:00:00Z
-format: html
+date: today
+format:
+  html:
+    theme: darkly
+    toc: true
+    toc-depth: 3
+    code-fold: show
+    code-tools: true
+    embed-resources: true
+    self-contained: true
+    title-block-banner: true
+engine: knitr
+execute:
+  eval: false
+  warning: false
+  message: false
 ---
 
-# 🚀 Getting Started with CyteTypeR
+## Introduction
 
--   This guide introduces **CyteTypeR**, an API-driven tool for automated cell type annotation in scRNA-seq data.
--   **CyteTypeR GitHub:** <https://github.com/NygenAnalytics/CyteTypeR>
--   **Python version:** <https://github.com/NygenAnalytics/CyteType>
--   **SeuratData (IFNB dataset):** <https://satijalab.org/seurat/articles/pbmc3k_tutorial>
+This guide demonstrates **CyteTypeR**, an API-driven tool for automated cell type annotation in scRNA-seq data. CyteTypeR prepares cluster markers, aggregated metadata, and UMAP embeddings, then submits them to the CyteType API for annotation.
 
-## 📌 Overview
+-   **What CyteTypeR returns**:
+    -   Updated **Seurat object** with predicted cell type annotations in metadata
+    -   **Interactive HTML report** with cluster-level visualizations and marker analysis
+-   **CyteTypeR GitHub**: <https://github.com/NygenAnalytics/CyteTypeR>
+-   **Python version**: <https://github.com/NygenAnalytics/CyteType>
+-   **Example report**: <https://nygen-labs-prod--cytetype-api.modal.run/report/34fac9e9-3c43-4c46-95f4-6b2994e57ada?cluster=7&tab=markers>
 
--   CyteTypeR prepares markers, metadata, and UMAP embeddings.
+## Installation
 
--   Sends data to the CyteTypeR API for annotation.
-
--   Returns:
-
-    -   Annotated **Seurat object**
-    -   **Interactive HTML report**
-
--   Example CyteTypeR HTML report:
-
-    -   <https://nygen-labs-prod--cytetype-api.modal.run/report/34fac9e9-3c43-4c46-95f4-6b2994e57ada?cluster=7&tab=markers>
-
-
-
-## 🧰 Installation
+CyteTypeR is installed from GitHub via `devtools`. All other dependencies are available from CRAN or Bioconductor.
 
 ```{r}
+#| label: installation
+
 devtools::install_github("NygenAnalytics/CyteTypeR")
 ```
 
--   Required libraries:
+## Data Import
+
+-   **Dataset**: IFNB stimulation dataset from `SeuratData`
+    -   Contains PBMCs from control and IFN-beta stimulated conditions
+    -   Commonly used as a benchmark dataset for scRNA-seq integration and annotation workflows
+-   **Loading method**: `SeuratData::LoadData()` returns a Seurat object ready for processing
 
 ```{r}
+#| label: data-import
+
+# Libraries ----------
+
 library(Seurat)
 library(SeuratData)
 library(SCpubr)
@@ -45,69 +59,137 @@ library(tidyseurat)
 library(CyteTypeR)
 library(glmGamPoi)
 library(tictoc)
-```
 
+# Load data ----------
 
-## 📥 Step 1 — Load Data
-
--   Load the **IFNB stimulation dataset**:
-
-```{r}
 ifnb <- SeuratData::LoadData(ds = "ifnb")
 ```
 
+## Normalization and Dimensionality Reduction
 
-## ⚙️ Step 2 — Pre-processing
-
--   Perform SCTransform, PCA, and UMAP embedding:
+-   **Normalization**: `SCTransform()` with `vst.flavor = "v2"`
+    -   Replaces the traditional `NormalizeData` + `FindVariableFeatures` + `ScaleData` pipeline
+    -   Uses regularized negative binomial regression to model technical noise
+    -   `vst.flavor = "v2"` uses the improved glmGamPoi-based model for better variance stabilization
+-   **PCA**: Reduces high-dimensional gene expression space to principal components capturing major biological variation
+-   **UMAP**: Projects PCA embeddings into 2D for visualization
+    -   `dims = 1:20` uses the first 20 PCs, balancing signal capture against noise inclusion
 
 ```{r}
-ifnb_sct <- ifnb %>%
-  SCTransform() %>%
-  RunPCA() %>%
-  RunUMAP(dims = 1:20)
+#| label: normalization-dimreduction
+
+# Libraries ----------
+
+library(Seurat)
+library(glmGamPoi)
+
+# Inputs ----------
+
+# ifnb object from previous chunk
+
+# Normalization ----------
+
+ifnb <- SCTransform(ifnb, vst.flavor = "v2")
+
+# Dimensionality reduction ----------
+
+ifnb <- RunPCA(ifnb)
+ifnb <- RunUMAP(ifnb, dims = 1:20)
 ```
 
+| Parameter | Value | Justification |
+|-----------------------|------------------|-------------------------------|
+| `vst.flavor` | `"v2"` | Improved variance stabilization via glmGamPoi backend |
+| `dims` (UMAP) | `1:20` | Standard range; captures major biological variation while excluding noisy higher PCs |
 
-## 🔍 Step 3 — Clustering
+## Clustering
 
--   Find neighbors and clusters:
+-   **Graph construction**: `FindNeighbors()` builds a shared nearest-neighbor (SNN) graph from PCA space
+    -   Uses the same `dims = 1:20` as UMAP for consistency
+-   **Clustering algorithm**: `FindClusters()` applies the Louvain algorithm on the SNN graph
+    -   `resolution = 0.4` produces moderate granularity — lower values yield fewer, broader clusters
 
 ```{r}
-ifnb_sct_clust <- ifnb_sct %>%
-  FindNeighbors(dims = 1:20) %>%
-  FindClusters(resolution = 0.4)
+#| label: clustering
+
+# Libraries ----------
+
+library(Seurat)
+
+# Inputs ----------
+
+# ifnb object from previous chunk
+
+# Graph construction ----------
+
+ifnb <- FindNeighbors(ifnb, dims = 1:20)
+
+# Clustering ----------
+
+ifnb <- FindClusters(ifnb, resolution = 0.4)
 ```
 
+| Parameter | Value | Justification |
+|-----------------------|------------------|-------------------------------|
+| `dims` | `1:20` | Matches dimensionality used for UMAP |
+| `resolution` | `0.4` | Moderate granularity; avoids over-splitting clusters in this dataset |
 
-## 🧬 Step 4 — Differential Expression
+## Differential Expression
 
--   Identify top markers per cluster:
+-   **Method**: `FindAllMarkers()` performs pairwise differential expression testing for each cluster against all other cells
+    -   Identifies marker genes that distinguish each cluster from the rest
+    -   `group.by = "seurat_clusters"` ensures markers are computed per Seurat cluster identity
+-   **Purpose**: Marker genes are the primary input for CyteTypeR's cell type prediction
 
 ```{r}
-clust_markers <- ifnb_sct_clust %>%
-  FindAllMarkers(group.by = "seurat_clusters")
+#| label: differential-expression
+
+# Libraries ----------
+
+library(Seurat)
+
+# Inputs ----------
+
+# ifnb object from previous chunk
+
+# Find cluster markers ----------
+
+clust_markers <- FindAllMarkers(ifnb, group.by = "seurat_clusters")
 ```
 
+## Prepare Data for CyteTypeR
 
-## 📦 Step 5 — Prepare Data for CyteTypeR
-
--   Prepare UMAP coordinates, markers, and metadata:
+-   **`PrepareCyteTypeR()`** transforms the Seurat object and markers into the JSON structure expected by the CyteType API:
+    -   **Cluster labels**: Mapping of cell indices to cluster identities
+    -   **Aggregated metadata**: Per-cluster percentage breakdowns of each categorical metadata column (e.g., condition, sample)
+    -   **UMAP coordinates**: 2D embeddings for all cells
+    -   **Top marker genes**: Top N genes per cluster ranked by differential expression significance
+-   **Report metadata**: A named list providing context for the interactive HTML report
 
 ```{r}
+#| label: prepare-cytetype
+
+# Libraries ----------
+
+library(CyteTypeR)
+
+# Inputs ----------
+
+# ifnb object and clust_markers from previous chunks
+
+# Prepare API payload ----------
+
 prepped_data <- PrepareCyteTypeR(
-  ifnb_sct_clust,
+  ifnb,
   clust_markers,
   n_top_genes = 10,
   group_key = "seurat_clusters",
   aggregate_metadata = TRUE,
   coordinates_key = "umap"
 )
-```
 
--   Add metadata for the HTML report:
+# Report metadata ----------
 
-```{r}
 metadata <- list(
   title = "My scRNA-seq analysis of the ifnb dataset",
   run_label = "initial_analysis",
@@ -115,16 +197,39 @@ metadata <- list(
 )
 ```
 
-------------------------------------------------------------------------
+| Parameter | Value | Justification |
+|-----------------------|------------------|-------------------------------|
+| `n_top_genes` | `10` | Top 10 markers per cluster balances specificity with noise reduction |
+| `group_key` | `"seurat_clusters"` | Uses the Seurat-assigned cluster identities |
+| `aggregate_metadata` | `TRUE` | Computes per-cluster percentage breakdowns of metadata columns |
+| `coordinates_key` | `"umap"` | Sends UMAP embeddings for the interactive report visualization |
 
-## 🤖 Step 6 — Automated Cell Type Annotation
+## Automated Cell Type Annotation
 
--   Submit to CyteTypeR API:
+-   **`CyteTypeR()`** submits the prepared data to the CyteType API
+    -   `study_context` provides biological context that improves annotation accuracy (tissue type, experiment description)
+    -   `metadata` populates the interactive HTML report header
+-   **Returns**:
+    -   Seurat object with predicted cell type labels added to metadata columns
+    -   URL to an interactive HTML report with per-cluster annotation details and marker visualizations
 
 ```{r}
+#| label: annotation
+
+# Libraries ----------
+
+library(CyteTypeR)
+library(tictoc)
+
+# Inputs ----------
+
+# ifnb object, prepped_data, and metadata from previous chunks
+
+# Submit to CyteTypeR API ----------
+
 tic("CyteTypeR Run")
-ifnb_sct_clust_annot <- CyteTypeR(
-  obj = ifnb_sct_clust,
+ifnb_annotated <- CyteTypeR(
+  obj = ifnb,
   prepped_data = prepped_data,
   study_context = "ifnb dataset from SeuratData package",
   metadata = metadata
@@ -132,18 +237,16 @@ ifnb_sct_clust_annot <- CyteTypeR(
 toc()
 ```
 
--   Output includes:
+| Parameter | Value | Justification |
+|-----------------------|------------------|-------------------------------|
+| `study_context` | Dataset description | Provides biological context to improve annotation accuracy |
+| `metadata` | Named list with title, run_label, experiment_name | Populates the interactive report header |
 
-    -   Predicted cell types added to Seurat metadata.
-    -   Interactive HTML report.
-    -   Updated cluster annotations.
+## Summary
 
-## ⭐ Summary
+CyteTypeR provides a streamlined workflow for automated cell type annotation:
 
--   CyteTypeR offers:
-
-    -   Automated annotation
-    -   High-quality visual reporting
-    -   Seamless Seurat integration
-
--   Powerful tool for routine or large-scale scRNA-seq workflows.
+-   **API-driven**: Offloads annotation to a specialized service rather than relying on local reference datasets
+-   **Seurat-native**: Accepts and returns Seurat objects with no format conversion required
+-   **Report generation**: Produces interactive HTML reports alongside programmatic annotations
+-   **Minimal setup**: Requires only standard Seurat preprocessing (normalization, clustering, marker detection) as input
